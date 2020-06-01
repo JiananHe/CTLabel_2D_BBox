@@ -71,6 +71,7 @@ def convert_label(ct_array, lbl_array, case_name):
     ct_array[ct_array > upper_thresh] = upper_thresh
     ct_array = (((ct_array - lower_thresh) / window) * 255).astype(np.uint8)
     lbl_array = (lbl_array * 255).astype(np.uint8)
+    rectangles_count = 0
     for slice_id in range(num_slice):
         ct_slice = ct_array[slice_id]
         ct_slice = cv2.cvtColor(ct_slice, cv2.COLOR_GRAY2BGR)
@@ -78,12 +79,10 @@ def convert_label(ct_array, lbl_array, case_name):
         contours, _ = cv2.findContours(lbl_slice, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         rectangles = []
-        is_contain_roi = False
         for cid in range(len(contours)):  # [n, 1, 2]
             c = contours[cid]
             if cv2.contourArea(contours[cid]) < 10:  # ignore areas less than 10
                 continue
-            is_contain_roi = True
             cv2.drawContours(ct_slice, contours, cid, (0, 255, 255), 1)
             xs = c[:, :, 0]
             ys = c[:, :, 1]
@@ -93,6 +92,7 @@ def convert_label(ct_array, lbl_array, case_name):
             max_y = int(np.max(ys))
             ct_slice = cv2.rectangle(ct_slice, (min_x, min_y), (max_x, max_y), (0, 0, 255), 1)
             rectangles.append([[min_x, min_y], [max_x, max_y]])
+            rectangles_count += 1
 
         if len(rectangles) > 0:
             dict['ROIs'][slice_id] = rectangles
@@ -101,25 +101,31 @@ def convert_label(ct_array, lbl_array, case_name):
         # cv2.imshow("lbl", lbl_slice)
         # cv2.imshow("ct", ct_slice)
         # cv2.waitKey(0)
-
+    print("%d rectangles in total" % rectangles_count)
     j = json.dumps(dict)
-    print(j)
     with open(case_json_save_file, 'w') as f:
         f.write(j)
+    return rectangles_count
 
 
 if __name__ == "__main__":
     ct_dir = r"C:\Users\13249\Desktop\20200115-20200205\COVID2019\Data\PrivateData\zhanwei\CT"
-    label_dir = r"C:\Users\13249\Desktop\20200115-20200205\COVID2019\Data\PrivateData\zhanwei\labels"
-    save_dir = r"C:\Users\13249\Desktop\20200115-20200205\COVID2019\Data\PrivateData\zhanwei\rectangle_labels"
+    label_dir = r"C:\Users\13249\Desktop\20200115-20200205\COVID2019\Data\PrivateData\zhanwei\labels-2"
+    save_dir = r"C:\Users\13249\Desktop\20200115-20200205\COVID2019\Data\PrivateData\zhanwei\Zhanwei_Rectangle_Labels-2"
 
     case_sum = 0
+    rectangle_sum = 0
+    ct_cases = os.listdir(ct_dir)
     for case in os.listdir(label_dir):
         # if os.path.exists(os.path.join(save_dir, case)):  # 已转换过
         #     case_sum += 1
         #     continue
 
         print(case)
+        if case not in ct_cases:
+            print("no ct for case: %s" % case)
+            continue
+
         lbl_case_path = recurse_dir(os.path.join(label_dir, case))
         ct_case_path = recurse_ct_dir(os.path.join(ct_dir, case))
 
@@ -127,7 +133,8 @@ if __name__ == "__main__":
         lbl_array, lbl_spacing, lbl_origin, lbl_dims = read_dicom(lbl_case_path)
         assert ct_array.shape[0] <= lbl_array.shape[0] + 5, print("assert %s" % case)
 
-        convert_label(ct_array, lbl_array, case)
+        rectangle_sum += convert_label(ct_array, lbl_array, case)
         case_sum += 1
 
     print("%d cases in total" % case_sum)
+    print("%d rectangles in total" % rectangle_sum)

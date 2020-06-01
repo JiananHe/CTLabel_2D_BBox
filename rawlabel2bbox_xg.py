@@ -56,6 +56,8 @@ def convert_label_json(ct_array, lbl_array, out_dir, case_name):
     ct_array[ct_array > upper_thresh] = upper_thresh
     ct_array = (((ct_array - lower_thresh) / window) * 255).astype(np.uint8)
     lbl_array = (lbl_array * 255).astype(np.uint8)
+    rectangle_counts = 0
+
     for slice_id in range(num_slice):
         ct_slice = ct_array[slice_id]
         ct_slice = cv2.cvtColor(ct_slice, cv2.COLOR_GRAY2BGR)
@@ -63,12 +65,10 @@ def convert_label_json(ct_array, lbl_array, out_dir, case_name):
         contours, _ = cv2.findContours(lbl_slice, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         rectangles = []
-        is_contain_roi = False
         for cid in range(len(contours)):  # [n, 1, 2]
             c = contours[cid]
             if cv2.contourArea(contours[cid]) < 10:  # ignore areas less than 10
                 continue
-            is_contain_roi = True
             cv2.drawContours(ct_slice, contours, cid, (0, 255, 255), 1)
             xs = c[:, :, 0]
             ys = c[:, :, 1]
@@ -78,19 +78,17 @@ def convert_label_json(ct_array, lbl_array, out_dir, case_name):
             max_y = int(np.max(ys))
             ct_slice = cv2.rectangle(ct_slice, (min_x, min_y), (max_x, max_y), (0, 0, 255), 1)
             rectangles.append([[min_x, min_y], [max_x, max_y]])
+            rectangle_counts += 1
 
         if len(rectangles) > 0:
             dict['ROIs'][slice_id] = rectangles
             cv2.imwrite(os.path.join(case_slice_save_dir, "%03d.jpg" % slice_id), ct_slice)
 
-        # cv2.imshow("lbl", lbl_slice)
-        # cv2.imshow("ct", ct_slice)
-        # cv2.waitKey(0)
-
+    print("%d rectangles in %s" % (rectangle_counts, case_name))
     j = json.dumps(dict)
-    print(j)
     with open(case_json_save_file, 'w') as f:
         f.write(j)
+    return rectangle_counts
 
 
 def convert_label_mask(lbl_array, lbl_props, out_dir, case_name):
@@ -137,6 +135,7 @@ if __name__ == "__main__":
     mask_save_dir = r"C:\Users\13249\Desktop\20200115-20200205\COVID2019\Data\PrivateData\shen_ren_min\All_Mask_Labels"
 
     case_sum = 0
+    rectangle_sum = 0
     for dicom_out_dir in ['COVID-dicom-9th', 'COVID-DICOM-8th', 'dicom 7', 'DICOM-6', 'DICOM-5th', 'DICOM', 'DICOM-3rd-15', 'DICOM-4th']:
         ct_case_dir = os.path.join(ct_dir, dicom_out_dir)
         ct_case_names = os.listdir(ct_case_dir)
@@ -166,9 +165,10 @@ if __name__ == "__main__":
             assert ct_dims == lbl_dims and ct_origin == lbl_origin and ct_spacing == lbl_spacing and ct_array.shape[0] <= lbl_array.shape[0] + 5, \
                 print("assert in %s and %s" % (ct_case_name, lbl_case_name))
 
-            # convert_label_json(ct_array, lbl_array, dicom_out_dir,ct_case_name.lower())
-            convert_label_mask(lbl_array, [lbl_origin, lbl_spacing, lbl_direction], dicom_out_dir, ct_case_name.lower())
+            rectangle_sum += convert_label_json(ct_array, lbl_array, dicom_out_dir,ct_case_name.lower())
+            # convert_label_mask(lbl_array, [lbl_origin, lbl_spacing, lbl_direction], dicom_out_dir, ct_case_name.lower())
             case_count += 1
         case_sum += case_count
         print("%d cases in %s \n" % (case_count, dicom_out_dir))
     print("%d cases in total" % case_sum)
+    print("%d rectangles in total" % rectangle_sum)
